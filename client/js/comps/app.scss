@@ -145,11 +145,13 @@ ul {
 
   .items {
     p {
+      line-height: 16px;
       padding: 5px;
       background: darken(#ededed, 80%);
       font-size: 14px;
       margin-bottom: 0;
       word-break: break-word;
+      animation: itemFadeIn 0.5s;
     }
   }
 
@@ -159,6 +161,15 @@ ul {
 
   .infoEvent {
     color: #42f47d;
+  }
+}
+
+@keyframes itemFadeIn {
+  from{
+    opacity: 0;
+  }
+  to{
+    opacity: 1;
   }
 }
 

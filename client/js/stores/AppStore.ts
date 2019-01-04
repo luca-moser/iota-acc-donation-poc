@@ -27,6 +27,7 @@ export const MsgType = {
     ReceivedDeposit: 6,
     ReceivedMessage: 7,
     Error: 8,
+    Balance: 9,
 };
 
 class WsMsg {
@@ -76,17 +77,62 @@ export class ApplicationStore {
         this.ws = new WebSocket(`ws://${location.host}/account/live`);
         this.ws.onmessage = (e: MessageEvent) => {
             let obj: WsMsg = JSON.parse(e.data);
+            let event;
+            let tail, bundle, msg, value;
             switch (obj.msg_type) {
                 case MsgType.Error:
+                    event = new Event(JSON.stringify(obj.data), obj.ts, EventType.Error);
+                    break;
+                case MsgType.Promotion:
+                    tail = obj.data.promotion_tail_tx_hash;
+                    bundle = obj.data.bundle_hash;
+                    event = new Event(`promoted bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.Reattachment:
+                    tail = obj.data.reattachment_tail_tx_hash;
+                    bundle = obj.data.bundle_hash;
+                    event = new Event(`reattached bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.ReceivingDeposit:
+                    tail = obj.data[0].hash;
+                    bundle = obj.data[0].bundle;
+                    value = obj.data[0].value;
+                    event = new Event(`receiving deposit ${value}i; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.ReceivedDeposit:
+                    tail = obj.data[0].hash;
+                    bundle = obj.data[0].bundle;
+                    value = obj.data[0].value;
+                    event = new Event(`received deposit ${value}i; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.ReceivedMessage:
+                    tail = obj.data[0].hash;
+                    bundle = obj.data[0].bundle;
+                    event = new Event(`received message; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.Sending:
+                    tail = obj.data[0].hash;
+                    bundle = obj.data[0].bundle;
+                    event = new Event(`sending bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.Sent:
+                    tail = obj.data[0].hash;
+                    bundle = obj.data[0].bundle;
+                    event = new Event(`sent bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    break;
+                case MsgType.Balance:
+                    event = new Event(`updated balance`, obj.ts, EventType.Info);
                     runInAction(() => {
-                        this.events.push(new Event(obj.data.error, obj.ts, EventType.Error));
+                        this.balance = obj.data;
                     });
                     break;
-                default:
-                    runInAction(() => {
-                        this.events.push(new Event(JSON.stringify(obj.data), obj.ts, EventType.Info));
-                    });
-                    break;
+            }
+
+            if (event) {
+                // add the new event
+                runInAction(() => {
+                    this.events.push(event);
+                });
             }
         }
     }

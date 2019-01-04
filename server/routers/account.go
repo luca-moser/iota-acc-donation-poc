@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/iotaledger/iota.go/account"
@@ -34,6 +33,7 @@ const (
 	MsgReceivedDeposit
 	MsgReceivedMessage
 	MsgError
+	MsgBalance
 )
 
 type wsmsg struct {
@@ -71,9 +71,6 @@ func (accRouter *AccRouter) Init() {
 		wsMu.Lock()
 		defer wsMu.Unlock()
 
-		msgJSON, _ := json.MarshalIndent(data, "", "   ")
-		fmt.Print(string(msgJSON))
-
 		for _, v := range wses {
 			if err := v.WriteJSON(data); err != nil {
 				// TODO: do something
@@ -97,6 +94,10 @@ func (accRouter *AccRouter) Init() {
 			case ev := <-listener.ReceivingDeposit:
 				msg = &wsmsg{MsgType: MsgReceivingDeposit, Data: ev}
 			case ev := <-listener.ReceivedDeposit:
+				b, err := acc.Balance()
+				if err == nil {
+					sendWsMsg(&wsmsg{MsgType: MsgBalance, Data: b})
+				}
 				msg = &wsmsg{MsgType: MsgReceivedDeposit, Data: ev}
 			case ev := <-listener.ReceivedMessage:
 				msg = &wsmsg{MsgType: MsgReceivedMessage, Data: ev}
@@ -133,8 +134,6 @@ func (accRouter *AccRouter) Init() {
 		if err != nil {
 			return err
 		}
-
-		fmt.Print("new websocket connection")
 
 		// register new websocket connection
 		var thisID int

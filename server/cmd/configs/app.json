@@ -7,7 +7,7 @@
     "data_dir": "./data",
     "primary_node": "https://trinity.iota-tangle.io:14265",
     "quorum_nodes": [
-      "https://peanut.iotasalad.org:14265",
+      "https://pow4.iota.community:443",
       "https://iota-4.de:14267",
       "https://iota-3.de:14267"
     ],

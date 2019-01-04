@@ -14,6 +14,7 @@ export const debugConsole: string;
 export const consoleTitle: string;
 export const baseInfo: string;
 export const items: string;
+export const itemFadeIn: string;
 export const errorEvent: string;
 export const infoEvent: string;
 export const liveIndicator: string;

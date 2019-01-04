@@ -4,6 +4,7 @@ import {inject, observer} from 'mobx-react';
 import {ApplicationStore, EventType} from '../stores/AppStore';
 import DevTools from 'mobx-react-devtools';
 import {default as QRCode} from 'qrcode.react';
+import {default as dateformat} from 'dateformat';
 
 import * as css from './app.scss';
 
@@ -46,10 +47,11 @@ class DebugConsole extends React.Component<Props, {}> {
             return <p key={ev.ts.getTime()}>
                 {
                     ev.isError() ?
-                        <span className={css.errorEvent}>Error: </span>
+                        <span className={css.errorEvent}>error {dateformat(ev.ts, "dd.mm.yy HH:mm:ss")}: </span>
                         :
-                        <span className={css.infoEvent}>Info: </span>
+                        <span className={css.infoEvent}>info {dateformat(ev.ts, "dd.mm.yy HH:mm:ss")}: </span>
                 }
+                <br/>
                 {ev.msg}
             </p>
         });
