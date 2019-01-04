@@ -6,6 +6,7 @@ server/cmd/*.exe
 server/cmd/logs/
 server/cmd/data/
 server/cmd/tmp/
+wallet/db/
 
 # Compiled source #
 ###################

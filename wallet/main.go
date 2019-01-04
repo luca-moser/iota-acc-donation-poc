@@ -19,11 +19,11 @@ import (
 const configFile = "wallet.json"
 const dateFormat = "2006-02-01 15:04:05"
 
-type ntpclock struct {
+type NTPClock struct {
 	server string
 }
 
-func (clock *ntpclock) Now() (time.Time, error) {
+func (clock *NTPClock) Now() (time.Time, error) {
 	t, err := ntp.Time(clock.server)
 	if err != nil {
 		return time.Time{}, errors.Wrap(err, "NTP clock error")
@@ -62,11 +62,11 @@ func main() {
 	// compose quorum API
 	httpClient := &http.Client{Timeout: time.Duration(5) * time.Second}
 	iotaAPI, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
-		PrimaryNode:          &conf.PrimaryNode,
-		Threshold:            conf.QuorumThreshold,
-		NoResponseTolerance:  conf.NoResponseTolerance,
-		Client:               httpClient,
-		Nodes:                conf.QuorumNodes,
+		PrimaryNode:         &conf.PrimaryNode,
+		Threshold:           conf.QuorumThreshold,
+		NoResponseTolerance: conf.NoResponseTolerance,
+		Client:              httpClient,
+		Nodes:               conf.QuorumNodes,
 	}, api.NewQuorumHTTPClient)
 	must(err)
 
@@ -78,7 +78,7 @@ func main() {
 	must(err)
 
 	// init NTP time source
-	ntpClock := &ntpclock{conf.NTPServer}
+	ntpClock := &NTPClock{conf.NTPServer}
 
 	// init account
 	acc, err := account.NewAccount(conf.Seed, badger, iotaAPI, &account.AccountsOpts{
@@ -104,7 +104,7 @@ func main() {
 	fmt.Println("current balance", balance, "iotas")
 
 	// log all events happening around the account
-	//logAccountEvents(acc)
+	logAccountEvents(acc)
 
 	// wait for magnet-link input
 	for {
@@ -189,6 +189,9 @@ func logAccountEvents(acc *account.Account) {
 				tail := ev[0]
 				fmt.Printf("received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 			case errorEvent := <-acc.Errors():
+				if errorEvent.Type == account.ErrorPromoteTransfer || errorEvent.Type == account.ErrorReattachTransfer {
+					continue
+				}
 				fmt.Printf("received error: %s\n", errorEvent.Error)
 			}
 		}
