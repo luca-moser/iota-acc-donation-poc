@@ -1,0 +1,31 @@
+{
+  "name": "app",
+  "dev": true,
+  "verbose": true,
+  "account": {
+    "seed": "YZAQDOXJQQGNBTCAUSJVXXHYWTVVSVUFPOI9ZAJIGYTUUYRPMPWXJVKGHHTZRIISUWWSXYAUFKOZRJASH",
+    "data_dir": "./data",
+    "primary_node": "https://trinity.iota-tangle.io:14265",
+    "quorum_nodes": [
+      "https://peanut.iotasalad.org:14265",
+      "https://iota-4.de:14267",
+      "https://iota-3.de:14267"
+    ],
+    "mwm": 14,
+    "gtta_depth": 3,
+    "security_level": 2,
+    "transfer_poll_interval": 5,
+    "promote_reattach_interval": 5,
+    "address_validity_timeout_days": 3
+  },
+  "http": {
+    "domain": "example.com",
+    "address": "0.0.0.0:9000",
+    "assets": {
+      "static": "../../client",
+      "favicon": "../../client/img/favicon.ico",
+      "html": "../../client/html"
+    },
+    "logRequests": false
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "app",
+  "dev": false,
+  "verbose": false,
+  "http": {
+    "domain": "mydomain.com",
+    "address": "0.0.0.0:9000",
+    "assets": {
+      "static": "./assets",
+      "favicon": "./assets/img/favicon.ico",
+      "html": "./assets/html"
+    },
+    "logRequests": false
+  }
+}
