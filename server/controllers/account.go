@@ -3,6 +3,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/gob"
+	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/store"
@@ -29,6 +30,18 @@ type AccCtrl struct {
 	current     *deposit.Conditions
 	checkCondMu sync.Mutex
 	logger      log15.Logger
+}
+
+type ntpclock struct {
+	server string
+}
+
+func (clock *ntpclock) Now() (time.Time, error) {
+	t, err := ntp.Time(clock.server)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "NTP clock error")
+	}
+	return t.UTC(), nil
 }
 
 func (ac *AccCtrl) Init() error {
@@ -60,8 +73,8 @@ func (ac *AccCtrl) Init() error {
 	httpClient := &http.Client{Timeout: time.Duration(5) * time.Second}
 	a, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
 		PrimaryNode:         &conf.PrimaryNode,
-		Threshold:           1, // all nodes must reply with the same response
-		NoResponseTolerance: 0,
+		Threshold:           conf.QuorumThreshold,
+		NoResponseTolerance: conf.NoResponseTolerance,
 		Client:              httpClient,
 		Nodes:               conf.QuorumNodes,
 	}, api.NewQuorumHTTPClient)
@@ -73,14 +86,20 @@ func (ac *AccCtrl) Init() error {
 	// make sure data dir exists
 	os.MkdirAll(conf.DataDir, os.ModePerm)
 
-	// init account
+	// init store for the account
 	badger, err := store.NewBadgerStore(conf.DataDir)
 	if err != nil {
 		return errors.Wrap(err, "unable to initialize badger store")
 	}
+
+	// init NTP time source
+	ntpClock := &ntpclock{conf.NTPServer}
+
+	// init account
 	acc, err := account.NewAccount(conf.Seed, badger, ac.iota, &account.AccountsOpts{
 		MWM: conf.MWM, Depth: conf.GTTADepth, SecurityLevel: consts.SecurityLevel(conf.SecurityLevel),
 		PromoteReattachInterval: conf.PromoteReattachInterval, TransferPollInterval: conf.TransferPollInterval,
+		Clock: ntpClock,
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to instantiate account")

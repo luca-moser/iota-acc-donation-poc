@@ -51,6 +51,11 @@ type errormsg struct {
 	Type  account.ErrorType `json:"type"`
 }
 
+type balancemsg struct {
+	Usable uint64 `json:"usable"`
+	Total  uint64 `json:"total"`
+}
+
 func (accRouter *AccRouter) Init() {
 
 	acc := accRouter.AccCtrl.Acc
@@ -94,9 +99,10 @@ func (accRouter *AccRouter) Init() {
 			case ev := <-listener.ReceivingDeposit:
 				msg = &wsmsg{MsgType: MsgReceivingDeposit, Data: ev}
 			case ev := <-listener.ReceivedDeposit:
-				b, err := acc.Balance()
-				if err == nil {
-					sendWsMsg(&wsmsg{MsgType: MsgBalance, Data: b})
+				usable, err := acc.UsableBalance()
+				total, err2 := acc.TotalBalance()
+				if err == nil && err2 == nil {
+					sendWsMsg(&wsmsg{MsgType: MsgBalance, Data: balancemsg{usable, total}})
 				}
 				msg = &wsmsg{MsgType: MsgReceivedDeposit, Data: ev}
 			case ev := <-listener.ReceivedMessage:
@@ -114,19 +120,24 @@ func (accRouter *AccRouter) Init() {
 	g.GET("/donation-link", func(c echo.Context) error {
 		conditions, err := accRouter.AccCtrl.GenerateNewDonationAddress()
 		if err != nil {
-			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err})
+			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err.Error()})
 			return err
 		}
 		return c.JSON(http.StatusOK, *conditions)
 	})
 
 	g.GET("/balance", func(c echo.Context) error {
-		b, err := acc.Balance()
+		usable, err := acc.UsableBalance()
 		if err != nil {
-			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err})
+			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err.Error()})
 			return err
 		}
-		return c.JSON(http.StatusOK, balance{Balance: b})
+		total, err := acc.TotalBalance()
+		if err != nil {
+			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err.Error()})
+			return err
+		}
+		return c.JSON(http.StatusOK, balancemsg{usable, total})
 	})
 
 	g.GET("/live", func(c echo.Context) error {

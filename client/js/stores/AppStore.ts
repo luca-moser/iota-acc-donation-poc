@@ -13,7 +13,7 @@ class DepCond {
     url(): string {
         let time = Math.round(new Date(this.timeout_on).getTime() / 1000);
         let am = this.expected_amount ? this.expected_amount : 0;
-        return `iota://${this.address}/?t=${time}&m=${this.multi_use}&am=${am};`
+        return `iota://${this.address}/?t=${time}&m=${this.multi_use}&am=${am}`;
     }
 }
 
@@ -46,7 +46,7 @@ export class Event {
     type: number;
     msg: string;
 
-    constructor(msg: string, ts: string, type: number) {
+    constructor(msg: string, ts: Date, type: number) {
         this.msg = msg;
         this.type = type;
         this.ts = new Date(ts);
@@ -60,8 +60,10 @@ export class Event {
 export class ApplicationStore {
     @observable runningSince = 0;
     @observable depositCondition: DepCond = null;
-    @observable balance: number = 0;
+    @observable usable_balance: number = 0;
+    @observable total_balance: number = 0;
     @observable generating = false;
+    @observable loading_balance = true;
     @observable events: Array<Event> = [];
     ws: WebSocket;
     timerID;
@@ -78,52 +80,54 @@ export class ApplicationStore {
         this.ws.onmessage = (e: MessageEvent) => {
             let obj: WsMsg = JSON.parse(e.data);
             let event;
+            let now = new Date()
             let tail, bundle, msg, value;
             switch (obj.msg_type) {
                 case MsgType.Error:
-                    event = new Event(JSON.stringify(obj.data), obj.ts, EventType.Error);
+                    event = new Event(JSON.stringify(obj.data), now, EventType.Error);
                     break;
                 case MsgType.Promotion:
                     tail = obj.data.promotion_tail_tx_hash;
                     bundle = obj.data.bundle_hash;
-                    event = new Event(`promoted bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`promoted bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.Reattachment:
                     tail = obj.data.reattachment_tail_tx_hash;
                     bundle = obj.data.bundle_hash;
-                    event = new Event(`reattached bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`reattached bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.ReceivingDeposit:
                     tail = obj.data[0].hash;
                     bundle = obj.data[0].bundle;
                     value = obj.data[0].value;
-                    event = new Event(`receiving deposit ${value}i; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`receiving deposit ${value}i; bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.ReceivedDeposit:
                     tail = obj.data[0].hash;
                     bundle = obj.data[0].bundle;
                     value = obj.data[0].value;
-                    event = new Event(`received deposit ${value}i; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`received deposit ${value}i; bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.ReceivedMessage:
                     tail = obj.data[0].hash;
                     bundle = obj.data[0].bundle;
-                    event = new Event(`received message; bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`received message; bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.Sending:
                     tail = obj.data[0].hash;
                     bundle = obj.data[0].bundle;
-                    event = new Event(`sending bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`sending bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.Sent:
                     tail = obj.data[0].hash;
                     bundle = obj.data[0].bundle;
-                    event = new Event(`sent bundle ${bundle} with tail ${tail}`, obj.ts, EventType.Info);
+                    event = new Event(`sent bundle ${bundle} with tail ${tail}`, now, EventType.Info);
                     break;
                 case MsgType.Balance:
-                    event = new Event(`updated balance`, obj.ts, EventType.Info);
+                    event = new Event(`updated balance`, now, EventType.Info);
                     runInAction(() => {
-                        this.balance = obj.data;
+                        this.usable_balance = obj.data.usable;
+                        this.total_balance = obj.data.total;
                     });
                     break;
             }
@@ -145,7 +149,9 @@ export class ApplicationStore {
         try {
             let res = await axios.get(balanceURI);
             runInAction(() => {
-                this.balance = res.data.balance;
+                this.usable_balance = res.data.usable;
+                this.total_balance = res.data.total;
+                this.loading_balance = false;
             });
         } catch (err) {
             console.error(err);

@@ -1,7 +1,7 @@
 declare var __DEVELOPMENT__;
 import * as React from 'react';
 import {inject, observer} from 'mobx-react';
-import {ApplicationStore, EventType} from '../stores/AppStore';
+import {ApplicationStore} from '../stores/AppStore';
 import DevTools from 'mobx-react-devtools';
 import {default as QRCode} from 'qrcode.react';
 import {default as dateformat} from 'dateformat';
@@ -42,14 +42,14 @@ class DebugConsole extends React.Component<Props, {}> {
     }
 
     render() {
-        let {balance, events} = this.props.appStore;
+        let {usable_balance, total_balance, events, loading_balance} = this.props.appStore;
         let eventItems = events.map(ev => {
             return <p key={ev.ts.getTime()}>
                 {
                     ev.isError() ?
-                        <span className={css.errorEvent}>error {dateformat(ev.ts, "dd.mm.yy HH:mm:ss")}: </span>
+                        <span className={css.errorEvent}>error {dateformat(ev.ts, "dd.mm.yyyy HH:MM:ss")}: </span>
                         :
-                        <span className={css.infoEvent}>info {dateformat(ev.ts, "dd.mm.yy HH:mm:ss")}: </span>
+                        <span className={css.infoEvent}>info {dateformat(ev.ts, "dd.mm.yyyy HH:MM:ss")}: </span>
                 }
                 <br/>
                 {ev.msg}
@@ -66,9 +66,21 @@ class DebugConsole extends React.Component<Props, {}> {
                         Live information of the account object
                         running in the backend:
                     </p>
-                    <ul>
-                        <li>current balance: {balance}i</li>
-                    </ul>
+                    {
+                        loading_balance ?
+                            <span>
+                                Fetching balance
+                                <span className={css.loader}></span>
+                                <span className={css.loader}></span>
+                                <span className={css.loader}></span>
+                            </span>
+                            :
+                            <ul>
+                                <li>Total balance: {total_balance}i</li>
+                                <li>Usable balance: {usable_balance}i</li>
+                                <li>Non ready balance: {total_balance - usable_balance}i</li>
+                            </ul>
+                    }
                 </div>
                 <hr className={css.styleSix}/>
                 <div className={css.baseInfo}>

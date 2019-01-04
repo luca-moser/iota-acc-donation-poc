@@ -19,3 +19,5 @@ export const errorEvent: string;
 export const infoEvent: string;
 export const liveIndicator: string;
 export const liveAni: string;
+export const loader: string;
+export const loaderAni: string;

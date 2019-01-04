@@ -56,6 +56,8 @@ type AccountConfig struct {
 	Seed                       string   `json:"seed"`
 	PrimaryNode                string   `json:"primary_node"`
 	QuorumNodes                []string `json:"quorum_nodes"`
+	QuorumThreshold            float64  `json:"quorum_threshold"`
+	NoResponseTolerance        float64  `json:"no_response_tolerance"`
 	DataDir                    string   `json:"data_dir"`
 	MWM                        uint64   `json:"mwm"`
 	GTTADepth                  uint64   `json:"gtta_depth"`
@@ -63,6 +65,7 @@ type AccountConfig struct {
 	TransferPollInterval       uint64   `json:"transfer_poll_interval"`
 	PromoteReattachInterval    uint64   `json:"promote_reattach_interval"`
 	AddressValidityTimeoutDays uint64   `json:"address_validity_timeout_days"`
+	NTPServer                  string   `json:"ntp_server"`
 }
 
 type WebConfig struct {

@@ -1,0 +1,21 @@
+{
+  "seed": "XDOBAY9ZWZHKFRDSLTPUGAHWSTZWAEOYJQDNXIRDLZSESMRQLDOFAUUTEEHQQAMBCLZHZQZOCLGJCOHXX",
+  "data_dir": "./db",
+  "primary_node": "https://trinity.iota-tangle.io:14265",
+  "quorum_nodes": [
+    "https://trinity.iota-tangle.io:14265",
+    "https://nutzdoch.einfachiota.de",
+    "https://pow3.iota.community:443",
+    "http://heimelaga.vodka:14265",
+    "https://iota-2.de:14267"
+  ],
+  "quorum_threshold": 0.7,
+  "no_response_tolerance": 0.2,
+  "mwm": 14,
+  "gtta_depth": 3,
+  "security_level": 2,
+  "transfer_poll_interval": 5,
+  "promote_reattach_interval": 5,
+  "address_validity_timeout_days": 3,
+  "ntp_server": "time.google.com"
+}
