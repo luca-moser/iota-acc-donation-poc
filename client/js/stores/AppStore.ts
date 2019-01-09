@@ -155,6 +155,7 @@ export class ApplicationStore {
             });
         } catch (err) {
             console.error(err);
+            this.fetchBalance();
             // TODO: do something
         }
     }

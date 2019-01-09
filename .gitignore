@@ -7,6 +7,7 @@ server/cmd/logs/
 server/cmd/data/
 server/cmd/tmp/
 wallet/db/
+wallet/data/
 
 # Compiled source #
 ###################

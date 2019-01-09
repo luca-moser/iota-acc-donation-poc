@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Mandala/go-log"
 	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
@@ -19,6 +20,8 @@ import (
 const configFile = "wallet.json"
 const dateFormat = "2006-02-01 15:04:05"
 
+var logger *log.Logger
+
 type NTPClock struct {
 	server string
 }
@@ -32,19 +35,25 @@ func (clock *NTPClock) Now() (time.Time, error) {
 }
 
 type config struct {
-	Seed                       string   `json:"seed"`
-	PrimaryNode                string   `json:"primary_node"`
-	QuorumNodes                []string `json:"quorum_nodes"`
-	QuorumThreshold            float64  `json:"quorum_threshold"`
-	NoResponseTolerance        float64  `json:"no_response_tolerance"`
-	DataDir                    string   `json:"data_dir"`
-	MWM                        uint64   `json:"mwm"`
-	GTTADepth                  uint64   `json:"gtta_depth"`
-	SecurityLevel              uint64   `json:"security_level"`
-	TransferPollInterval       uint64   `json:"transfer_poll_interval"`
-	PromoteReattachInterval    uint64   `json:"promote_reattach_interval"`
-	AddressValidityTimeoutDays uint64   `json:"address_validity_timeout_days"`
-	NTPServer                  string   `json:"ntp_server"`
+	Seed    string `json:"seed"`
+	DataDir string `json:"data_dir"`
+	Quorum  struct {
+		PrimaryNode                string   `json:"primary_node"`
+		Nodes                      []string `json:"nodes"`
+		Threshold                  float64  `json:"threshold"`
+		NoResponseTolerance        float64  `json:"no_response_tolerance"`
+		MaxSubtangleMilestoneDelta uint64   `json:"max_subtangle_milestone_delta"`
+		Timeout                    uint64   `json:"timeout"`
+	} `json:"quorum"`
+	MWM                        uint64 `json:"mwm"`
+	GTTADepth                  uint64 `json:"gtta_depth"`
+	SecurityLevel              uint64 `json:"security_level"`
+	TransferPollInterval       uint64 `json:"transfer_poll_interval"`
+	PromoteReattachInterval    uint64 `json:"promote_reattach_interval"`
+	AddressValidityTimeoutDays uint64 `json:"address_validity_timeout_days"`
+	Time                       struct {
+		NTPServer string `json:"ntp_server"`
+	} `json:"time"`
 }
 
 func readConfig() *config {
@@ -57,16 +66,19 @@ func readConfig() *config {
 }
 
 func main() {
+	logger = log.New(os.Stdout)
 	conf := readConfig()
 
 	// compose quorum API
-	httpClient := &http.Client{Timeout: time.Duration(5) * time.Second}
+	quorumConf := conf.Quorum
+	httpClient := &http.Client{Timeout: time.Duration(quorumConf.Timeout) * time.Second}
 	iotaAPI, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
-		PrimaryNode:         &conf.PrimaryNode,
-		Threshold:           conf.QuorumThreshold,
-		NoResponseTolerance: conf.NoResponseTolerance,
-		Client:              httpClient,
-		Nodes:               conf.QuorumNodes,
+		PrimaryNode:                &quorumConf.PrimaryNode,
+		Threshold:                  quorumConf.Threshold,
+		NoResponseTolerance:        quorumConf.NoResponseTolerance,
+		Client:                     httpClient,
+		Nodes:                      quorumConf.Nodes,
+		MaxSubtangleMilestoneDelta: quorumConf.MaxSubtangleMilestoneDelta,
 	}, api.NewQuorumHTTPClient)
 	must(err)
 
@@ -78,10 +90,10 @@ func main() {
 	must(err)
 
 	// init NTP time source
-	ntpClock := &NTPClock{conf.NTPServer}
+	ntpClock := &NTPClock{conf.Time.NTPServer}
 
 	// init account
-	acc, err := account.NewAccount(conf.Seed, badger, iotaAPI, &account.AccountsOpts{
+	acc, err := account.NewAccount(conf.Seed, badger, iotaAPI, &account.Settings{
 		MWM: conf.MWM, Depth: conf.GTTADepth, SecurityLevel: consts.SecurityLevel(conf.SecurityLevel),
 		PromoteReattachInterval: conf.PromoteReattachInterval, TransferPollInterval: conf.TransferPollInterval,
 		Clock: ntpClock,
@@ -91,24 +103,26 @@ func main() {
 
 	// generate an own deposit address which expires in 3 days
 	// (just for having an address to send funds to for initial funding)
+	timeQueryS := time.Now()
+	logger.Infof("querying time via NTP server %s", conf.Time.NTPServer)
 	now, err := ntpClock.Now()
 	must(err)
+	logger.Infof("took %v to query time from %s", time.Now().Sub(timeQueryS), conf.Time.NTPServer)
+
 	now = now.AddDate(0, 0, 3)
+	logger.Infof("generating fresh deposit address with validity until %s....\n", now.Format(dateFormat))
 	depCond, err := acc.NewDepositRequest(&deposit.Request{TimeoutOn: &now})
 	must(err)
-	fmt.Println("own address", depCond.Address)
-
-	// print the current usable balance
-	balance, err := acc.UsableBalance()
-	must(err)
-	fmt.Println("current balance", balance, "iotas")
+	logger.Info("own address: ", depCond.Address)
 
 	// log all events happening around the account
 	logAccountEvents(acc)
 
 	// wait for magnet-link input
 	for {
-		fmt.Println("Enter magnet-link:")
+		printBalance(acc)
+
+		logger.Info("Enter magnet-link:")
 		var rawLink string
 		if _, err := fmt.Scanln(&rawLink); err != nil {
 			continue
@@ -117,7 +131,7 @@ func main() {
 		// parse the magnet link
 		conds, err := deposit.ParseMagnetLink(rawLink)
 		if err != nil {
-			fmt.Println("invalid magnet link supplied:", err.Error())
+			logger.Error("invalid magnet link supplied:", err.Error())
 			continue
 		}
 
@@ -127,29 +141,28 @@ func main() {
 
 		// check whether the magnet link expired
 		if currentTime.After(*conds.TimeoutOn) {
-			fmt.Printf("the magnet-link is expired on %s, (it's currently %s)\n", conds.TimeoutOn.Format(dateFormat), currentTime.Format(dateFormat))
+			logger.Errorf("the magnet-link is expired on %s, (it's currently %s)\n", conds.TimeoutOn.Format(dateFormat), currentTime.Format(dateFormat))
 			continue
 		}
 
 		// check whether we are still in time for doing this transfer
 		if currentTime.Add(time.Duration(24) * time.Hour).After(*conds.TimeoutOn) {
-			fmt.Println("the magnet link expires in less than 24 hours, please request a new one")
+			logger.Error("the magnet link expires in less than 24 hours, please request a new one")
 			continue
 		}
 
 		// send the transfer
-		fmt.Println("sending", 10, "iotas to", conds.Address)
+		logger.Info("sending", 10, "iotas to", conds.Address)
 		recipient := account.Recipient{Address: conds.Address, Value: 10}
-		bndl, err := acc.Send(recipient)
-		switch err {
+		_, err = acc.Send(recipient)
+		switch errors.Cause(err) {
 		case consts.ErrInsufficientBalance:
-			fmt.Println("insufficient funds for doing the transfer (!)")
+			logger.Error("insufficient funds for doing the transfer (!)")
+			continue
 		case nil:
 		default:
-			must(err)
+			logger.Error("got error from send operation:", err.Error())
 		}
-
-		fmt.Println("sent bundle with tail tx", bndl[0].Hash)
 	}
 }
 
@@ -157,6 +170,12 @@ func must(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func printBalance(acc *account.Account){
+	balance, err := acc.UsableBalance()
+	must(err)
+	logger.Info("current balance", balance, "iotas")
 }
 
 func logAccountEvents(acc *account.Account) {
@@ -170,29 +189,27 @@ func logAccountEvents(acc *account.Account) {
 		for {
 			select {
 			case ev := <-listener.Promotions:
-				fmt.Printf("promoted %s with %s\n", ev.BundleHash[:10], ev.PromotionTailTxHash)
+				logger.Infof("(event) promoted %s with %s\n", ev.BundleHash[:10], ev.PromotionTailTxHash)
 			case ev := <-listener.Reattachments:
-				fmt.Printf("reattached %s with %s\n", ev.BundleHash[:10], ev.ReattachmentTailTxHash)
+				logger.Infof("(event) reattached %s with %s\n", ev.BundleHash[:10], ev.ReattachmentTailTxHash)
 			case ev := <-listener.Sending:
 				tail := ev[0]
-				fmt.Printf("sending %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				logger.Infof("(event) sending %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 			case ev := <-listener.Sent:
 				tail := ev[0]
-				fmt.Printf("send (confirmed) %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				logger.Infof("(event) send (confirmed) %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 			case ev := <-listener.ReceivingDeposit:
 				tail := ev[0]
-				fmt.Printf("receiving deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				logger.Infof("(event) receiving deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 			case ev := <-listener.ReceivedDeposit:
 				tail := ev[0]
-				fmt.Printf("received deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				logger.Infof("(event) received deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				printBalance(acc)
 			case ev := <-listener.ReceivedMessage:
 				tail := ev[0]
-				fmt.Printf("received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
+				logger.Infof("(event) received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 			case errorEvent := <-acc.Errors():
-				if errorEvent.Type == account.ErrorPromoteTransfer || errorEvent.Type == account.ErrorReattachTransfer {
-					continue
-				}
-				fmt.Printf("received error: %s\n", errorEvent.Error)
+				logger.Errorf("received internal error: %s\n", errorEvent.Error)
 			}
 		}
 	}()

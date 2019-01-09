@@ -3,25 +3,31 @@
   "dev": true,
   "verbose": true,
   "account": {
-    "seed": "SW9HLUOUTE9ULVPDFDRBHYVYXXTPKLHQYPNOIKDIIJFJYUMRHKTZGOEXCRFNCAINKHSMHT9WVHRAFC9DT",
+    "seed": "SWOHLUOUTE9ULVPDFDRBHYVYXXTPKLHQYPNOIKDIIJFJYUMRHKTZGOEXCRFNCAINKHSMHT9WVHRAFC9DT",
     "data_dir": "./data",
-    "primary_node": "https://trinity.iota-tangle.io:14265",
-    "quorum_nodes": [
-      "https://trinity.iota-tangle.io:14265",
-      "https://nutzdoch.einfachiota.de",
-      "https://pow3.iota.community:443",
-      "http://heimelaga.vodka:14265",
-      "https://iota-2.de:14267"
-    ],
-    "quorum_threshold": 0.7,
-    "no_response_tolerance": 0.2,
     "mwm": 14,
     "gtta_depth": 3,
     "security_level": 2,
     "transfer_poll_interval": 5,
-    "promote_reattach_interval": 5,
+    "promote_reattach_interval": 30,
     "address_validity_timeout_days": 3,
-    "ntp_server": "time.google.com"
+    "quorum": {
+      "primary_node": "https://trinity.iota-tangle.io:14265",
+      "nodes": [
+        "https://trinity.iota-tangle.io:14265",
+        "https://pool.trytes.eu",
+        "https://nutzdoch.einfachiota.de",
+        "http://heimelaga.vodka:14265",
+        "http://173.249.45.12:14265"
+      ],
+      "max_subtangle_milestone_delta": 1,
+      "timeout": 15,
+      "threshold": 0.66,
+      "no_response_tolerance": 0.2
+    },
+    "time": {
+      "ntp_server": "time.google.com"
+    }
   },
   "http": {
     "domain": "example.com",

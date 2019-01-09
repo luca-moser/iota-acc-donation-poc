@@ -70,13 +70,15 @@ func (ac *AccCtrl) Init() error {
 	conf := ac.Config.App.Account
 
 	// init quorumed (what a word) api
-	httpClient := &http.Client{Timeout: time.Duration(5) * time.Second}
+	quorumConf := conf.Quorum
+	httpClient := &http.Client{Timeout: time.Duration(quorumConf.Timeout) * time.Second}
 	a, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
-		PrimaryNode:         &conf.PrimaryNode,
-		Threshold:           conf.QuorumThreshold,
-		NoResponseTolerance: conf.NoResponseTolerance,
-		Client:              httpClient,
-		Nodes:               conf.QuorumNodes,
+		PrimaryNode:                &quorumConf.PrimaryNode,
+		Threshold:                  quorumConf.Threshold,
+		NoResponseTolerance:        quorumConf.NoResponseTolerance,
+		Client:                     httpClient,
+		Nodes:                      quorumConf.Nodes,
+		MaxSubtangleMilestoneDelta: quorumConf.MaxSubtangleMilestoneDelta,
 	}, api.NewQuorumHTTPClient)
 	if err != nil {
 		return errors.Wrap(err, "unable to construct IOTA API")
@@ -93,10 +95,10 @@ func (ac *AccCtrl) Init() error {
 	}
 
 	// init NTP time source
-	ntpClock := &ntpclock{conf.NTPServer}
+	ntpClock := &ntpclock{conf.Time.NTPServer}
 
 	// init account
-	acc, err := account.NewAccount(conf.Seed, badger, ac.iota, &account.AccountsOpts{
+	acc, err := account.NewAccount(conf.Seed, badger, ac.iota, &account.Settings{
 		MWM: conf.MWM, Depth: conf.GTTADepth, SecurityLevel: consts.SecurityLevel(conf.SecurityLevel),
 		PromoteReattachInterval: conf.PromoteReattachInterval, TransferPollInterval: conf.TransferPollInterval,
 		Clock: ntpClock,
