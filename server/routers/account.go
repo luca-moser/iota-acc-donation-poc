@@ -59,12 +59,11 @@ type balancemsg struct {
 func (accRouter *AccRouter) Init() {
 
 	acc := accRouter.AccCtrl.Acc
+	eventMachine := accRouter.AccCtrl.EM
 	g := accRouter.WebEngine.Group("/account")
 
-	// register an event listener for the given events
-	listener := account.ComposeEventListener(acc, account.EventPromotion, account.EventReattachment,
-		account.EventSendingTransfer, account.EventTransferConfirmed, account.EventReceivedDeposit,
-		account.EventReceivingDeposit, account.EventReceivedMessage)
+	// register an event listener for all account events
+	listener := account.NewEventListener(accRouter.AccCtrl.EM).All()
 
 	// hold on to connected websocket clients
 	wsMu := sync.Mutex{}
@@ -88,9 +87,9 @@ func (accRouter *AccRouter) Init() {
 		for {
 			var msg *wsmsg
 			select {
-			case ev := <-listener.Promotions:
+			case ev := <-listener.Promotion:
 				msg = &wsmsg{MsgType: MsgPromotion, Data: ev}
-			case ev := <-listener.Reattachments:
+			case ev := <-listener.Reattachment:
 				msg = &wsmsg{MsgType: MsgReattachment, Data: ev}
 			case ev := <-listener.Sending:
 				msg = &wsmsg{MsgType: MsgSending, Data: ev}
@@ -107,7 +106,7 @@ func (accRouter *AccRouter) Init() {
 				msg = &wsmsg{MsgType: MsgReceivedDeposit, Data: ev}
 			case ev := <-listener.ReceivedMessage:
 				msg = &wsmsg{MsgType: MsgReceivedMessage, Data: ev}
-			case errorEvent := <-acc.Errors():
+			case errorEvent := <-eventMachine.InternalAccountErrors():
 				fmt.Println(errorEvent.Error)
 				fmt.Println(errorEvent.Type)
 				msg = &wsmsg{MsgType: MsgError, Data: errormsg{errorEvent.Error.Error(), errorEvent.Type}}

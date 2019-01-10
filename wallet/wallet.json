@@ -1,5 +1,5 @@
 {
-  "seed": "XUOAAY9ZWZHKFRDSLTPUGAHWSTZWAEOYJQDNXIRDLZSESMRQLDOFAUUTEEHQQAMBCLZHZQZOCLGJCOHXX",
+  "seed": "XUOAAY9ZWZHKFRDSLTPUGAHWSTZWAEOYJQDNXIRDLOSESMRQLDOFAUUTEEHQQAMBCLZHZQZOCLGJCOHXX",
   "data_dir": "./data",
   "mwm": 14,
   "gtta_depth": 3,
@@ -11,12 +11,13 @@
     "primary_node": "https://trinity.iota-tangle.io:14265",
     "nodes": [
       "https://trinity.iota-tangle.io:14265",
-      "https://iota-4.de:14267",
-      "https://nutzdoch.einfachiota.de",
-      "https://iota-2.de:14267"
+      "https://pow1.iota.community:443",
+      "https://pool.trytes.eu",
+      "http://heimelaga.vodka:14265",
+      "http://173.249.45.12:14265"
     ],
     "max_subtangle_milestone_delta": 1,
-    "timeout": 15,
+    "timeout": 60,
     "threshold": 0.66,
     "no_response_tolerance": 0.2
   },

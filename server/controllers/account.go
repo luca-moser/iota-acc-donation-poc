@@ -23,7 +23,8 @@ import (
 const currentCondsFile = "./current"
 
 type AccCtrl struct {
-	Acc         *account.Account
+	Acc         account.Account
+	EM          account.EventMachine
 	iota        *api.API
 	store       *store.BadgerStore
 	Config      *config.Configuration `inject:""`
@@ -98,15 +99,22 @@ func (ac *AccCtrl) Init() error {
 	ntpClock := &ntpclock{conf.Time.NTPServer}
 
 	// init account
-	acc, err := account.NewAccount(conf.Seed, badger, ac.iota, &account.Settings{
-		MWM: conf.MWM, Depth: conf.GTTADepth, SecurityLevel: consts.SecurityLevel(conf.SecurityLevel),
-		PromoteReattachInterval: conf.PromoteReattachInterval, TransferPollInterval: conf.TransferPollInterval,
-		Clock: ntpClock,
-	})
+	eventMachine := account.NewEventMachine()
+	acc, err := account.NewBuilder(ac.iota, badger).Seed(conf.Seed).
+		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
+		MWM(conf.MWM).Depth(conf.GTTADepth).Clock(ntpClock).
+		PromoteReattachInterval(conf.PromoteReattachInterval).
+		TransferPollInterval(conf.TransferPollInterval).
+		ReceiveEventFilter(account.NewPerTailReceiveEventFilter(true)).
+		WithEvents(eventMachine).Build()
 	if err != nil {
 		return errors.Wrap(err, "unable to instantiate account")
 	}
+	if err := acc.Start(); err != nil {
+		return err
+	}
 	ac.Acc = acc
+	ac.EM = eventMachine
 	return nil
 }
 

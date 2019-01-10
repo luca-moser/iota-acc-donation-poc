@@ -93,12 +93,17 @@ func main() {
 	ntpClock := &NTPClock{conf.Time.NTPServer}
 
 	// init account
-	acc, err := account.NewAccount(conf.Seed, badger, iotaAPI, &account.Settings{
-		MWM: conf.MWM, Depth: conf.GTTADepth, SecurityLevel: consts.SecurityLevel(conf.SecurityLevel),
-		PromoteReattachInterval: conf.PromoteReattachInterval, TransferPollInterval: conf.TransferPollInterval,
-		Clock: ntpClock,
-	})
+	eventMachine := account.NewEventMachine()
+	acc, err := account.NewBuilder(iotaAPI, badger).Seed(conf.Seed).
+		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
+		MWM(conf.MWM).Depth(conf.GTTADepth).Clock(ntpClock).
+		PromoteReattachInterval(conf.PromoteReattachInterval).
+		TransferPollInterval(conf.TransferPollInterval).
+		ReceiveEventFilter(account.NewPerTailReceiveEventFilter(true)).
+		WithEvents(eventMachine).
+		Build()
 	must(err)
+	must(acc.Start())
 	defer acc.Shutdown()
 
 	// generate an own deposit address which expires in 3 days
@@ -116,7 +121,7 @@ func main() {
 	logger.Info("own address: ", depCond.Address)
 
 	// log all events happening around the account
-	logAccountEvents(acc)
+	logAccountEvents(eventMachine, acc)
 
 	// wait for magnet-link input
 	for {
@@ -172,25 +177,24 @@ func must(err error) {
 	}
 }
 
-func printBalance(acc *account.Account){
+func printBalance(acc account.Account) {
 	balance, err := acc.UsableBalance()
 	must(err)
 	logger.Info("current balance", balance, "iotas")
 }
 
-func logAccountEvents(acc *account.Account) {
+func logAccountEvents(em account.EventMachine, acc account.Account) {
 
 	// create a new listener which listens on the given account events
-	listener := account.ComposeEventListener(acc, account.EventPromotion, account.EventReattachment,
-		account.EventSendingTransfer, account.EventTransferConfirmed, account.EventReceivedDeposit,
-		account.EventReceivingDeposit, account.EventReceivedMessage)
+	listener := account.NewEventListener(em).All()
 
 	go func() {
+	exit:
 		for {
 			select {
-			case ev := <-listener.Promotions:
+			case ev := <-listener.Promotion:
 				logger.Infof("(event) promoted %s with %s\n", ev.BundleHash[:10], ev.PromotionTailTxHash)
-			case ev := <-listener.Reattachments:
+			case ev := <-listener.Reattachment:
 				logger.Infof("(event) reattached %s with %s\n", ev.BundleHash[:10], ev.ReattachmentTailTxHash)
 			case ev := <-listener.Sending:
 				tail := ev[0]
@@ -208,8 +212,11 @@ func logAccountEvents(acc *account.Account) {
 			case ev := <-listener.ReceivedMessage:
 				tail := ev[0]
 				logger.Infof("(event) received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case errorEvent := <-acc.Errors():
+			case errorEvent := <-em.InternalAccountErrors():
 				logger.Errorf("received internal error: %s\n", errorEvent.Error)
+			case <-listener.Shutdown:
+				logger.Info("account got gracefully shutdown")
+				break exit
 			}
 		}
 	}()
