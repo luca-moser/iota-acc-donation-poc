@@ -1,12 +1,17 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/Mandala/go-log"
 	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
+	"github.com/iotaledger/iota.go/account/event"
+	"github.com/iotaledger/iota.go/account/event/listener"
+	"github.com/iotaledger/iota.go/account/plugins/promoter"
+	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
@@ -14,6 +19,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -65,7 +72,32 @@ func readConfig() *config {
 	return config
 }
 
+func handleShutdown() {
+
+}
+
 func main() {
+	var acc account.Account
+	var badger *store.BadgerStore
+
+	// shutdown function called on interrupts or panics
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Fatal("program panicked:", r)
+		}
+		if acc != nil {
+			if err := acc.Shutdown(); err != nil {
+				logger.Fatal("couldn't shutdown account gracefully")
+			}
+		}
+		if badger != nil {
+			if err := badger.Close(); err != nil {
+				logger.Fatal("couldn't close store gracefully")
+			}
+		}
+		logger.Info("bye!")
+	}()
+
 	logger = log.New(os.Stdout)
 	conf := readConfig()
 
@@ -86,25 +118,39 @@ func main() {
 	os.MkdirAll(conf.DataDir, os.ModePerm)
 
 	// init store for the account
-	badger, err := store.NewBadgerStore(conf.DataDir)
+	badger, err = store.NewBadgerStore(conf.DataDir)
 	must(err)
 
 	// init NTP time source
 	ntpClock := &NTPClock{conf.Time.NTPServer}
 
 	// init account
-	eventMachine := account.NewEventMachine()
-	acc, err := account.NewBuilder(iotaAPI, badger).Seed(conf.Seed).
+	em := event.NewEventMachine()
+
+	// create a poller which will check for incoming transfers
+	receiveEventFilter := poller.NewPerTailReceiveEventFilter(true)
+	transferPoller := poller.NewTransferPoller(
+		iotaAPI, badger, em, account.NewInMemorySeedProvider(conf.Seed), receiveEventFilter,
+		time.Duration(conf.TransferPollInterval)*time.Second,
+	)
+
+	// create a promoter/reattacher which takes care of trying to get
+	// pending transfers to confirm
+	promoterReattacher := promoter.NewPromoter(
+		iotaAPI, badger, em, ntpClock,
+		time.Duration(conf.PromoteReattachInterval)*time.Second,
+		conf.GTTADepth, conf.MWM)
+
+	// build the account object
+	acc, err = account.New(iotaAPI, badger).
+		Seed(conf.Seed).Clock(ntpClock).
 		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
-		MWM(conf.MWM).Depth(conf.GTTADepth).Clock(ntpClock).
-		PromoteReattachInterval(conf.PromoteReattachInterval).
-		TransferPollInterval(conf.TransferPollInterval).
-		ReceiveEventFilter(account.NewPerTailReceiveEventFilter(true)).
-		WithEvents(eventMachine).
+		MWM(conf.MWM).Depth(conf.GTTADepth).
+		With(transferPoller, promoterReattacher).
+		WithEvents(em).
 		Build()
 	must(err)
 	must(acc.Start())
-	defer acc.Shutdown()
 
 	// generate an own deposit address which expires in 3 days
 	// (just for having an address to send funds to for initial funding)
@@ -114,27 +160,57 @@ func main() {
 	must(err)
 	logger.Infof("took %v to query time from %s", time.Now().Sub(timeQueryS), conf.Time.NTPServer)
 
-	now = now.AddDate(0, 0, 3)
+	now = now.Add(time.Duration(2) * time.Hour)
 	logger.Infof("generating fresh deposit address with validity until %s....\n", now.Format(dateFormat))
-	depCond, err := acc.NewDepositRequest(&deposit.Request{TimeoutOn: &now})
+	depCond, err := acc.AllocateDepositRequest(&deposit.Request{TimeoutAt: &now})
 	must(err)
 	logger.Info("own address: ", depCond.Address)
 
 	// log all events happening around the account
-	logAccountEvents(eventMachine, acc)
+	logAccountEvents(em, acc)
 
-	// wait for magnet-link input
+	// listen for interrupt signals
+	interruptChan := make(chan os.Signal, 2)
+	signal.Notify(interruptChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+
+	// read in stdin input
+	commandChan := make(chan string)
+	go func() {
+		for {
+			var rawLink string
+			if _, err := fmt.Scanln(&rawLink); err != nil {
+				continue
+			}
+			commandChan <- rawLink
+		}
+	}()
+
+exit:
 	for {
 		printBalance(acc)
-
 		logger.Info("Enter magnet-link:")
-		var rawLink string
-		if _, err := fmt.Scanln(&rawLink); err != nil {
+
+		// read in next signal
+		var command string
+		select {
+		case <-interruptChan:
+			logger.Info("shutting down wallet...")
+			break exit
+		case cmd := <-commandChan:
+			command = cmd
+		}
+
+		if command == "state" {
+			printState(badger, conf.Seed)
+			continue
+		}
+
+		if command == "balance" {
 			continue
 		}
 
 		// parse the magnet link
-		conds, err := deposit.ParseMagnetLink(rawLink)
+		conds, err := deposit.ParseMagnetLink(command)
 		if err != nil {
 			logger.Error("invalid magnet link supplied:", err.Error())
 			continue
@@ -145,13 +221,13 @@ func main() {
 		must(err)
 
 		// check whether the magnet link expired
-		if currentTime.After(*conds.TimeoutOn) {
-			logger.Errorf("the magnet-link is expired on %s, (it's currently %s)\n", conds.TimeoutOn.Format(dateFormat), currentTime.Format(dateFormat))
+		if currentTime.After(*conds.TimeoutAt) {
+			logger.Errorf("the magnet-link is expired on %s, (it's currently %s)\n", conds.TimeoutAt.Format(dateFormat), currentTime.Format(dateFormat))
 			continue
 		}
 
 		// check whether we are still in time for doing this transfer
-		if currentTime.Add(time.Duration(24) * time.Hour).After(*conds.TimeoutOn) {
+		if currentTime.Add(time.Duration(24) * time.Hour).After(*conds.TimeoutAt) {
 			logger.Error("the magnet link expires in less than 24 hours, please request a new one")
 			continue
 		}
@@ -177,44 +253,57 @@ func must(err error) {
 	}
 }
 
-func printBalance(acc account.Account) {
-	balance, err := acc.UsableBalance()
+func printState(store store.Store, seed string) {
+	state, err := store.LoadAccount(fmt.Sprintf("%x", sha256.Sum256([]byte(seed))))
+	stateJson, err := json.MarshalIndent(state, "", "   ")
 	must(err)
-	logger.Info("current balance", balance, "iotas")
+	fmt.Print(string(stateJson))
+	fmt.Println()
 }
 
-func logAccountEvents(em account.EventMachine, acc account.Account) {
+func printBalance(acc account.Account) {
+	logger.Info("querying balance...")
+	s := time.Now()
+	balance, err := acc.AvailableBalance()
+	if err != nil {
+		logger.Infof("unable to fetch balance %s", err.Error())
+		return
+	}
+	logger.Infof("current balance %d iotas (took %v)", balance, time.Now().Sub(s))
+}
 
+func logAccountEvents(em event.EventMachine, acc account.Account) {
 	// create a new listener which listens on the given account events
-	listener := account.NewEventListener(em).All()
+	lis := listener.NewEventListener(em).All()
 
 	go func() {
+		defer lis.Close()
 	exit:
 		for {
 			select {
-			case ev := <-listener.Promotion:
+			case ev := <-lis.Promotion:
 				logger.Infof("(event) promoted %s with %s\n", ev.BundleHash[:10], ev.PromotionTailTxHash)
-			case ev := <-listener.Reattachment:
+			case ev := <-lis.Reattachment:
 				logger.Infof("(event) reattached %s with %s\n", ev.BundleHash[:10], ev.ReattachmentTailTxHash)
-			case ev := <-listener.Sending:
+			case ev := <-lis.Sending:
 				tail := ev[0]
 				logger.Infof("(event) sending %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-listener.Sent:
+			case ev := <-lis.Sent:
 				tail := ev[0]
 				logger.Infof("(event) send (confirmed) %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-listener.ReceivingDeposit:
+			case ev := <-lis.ReceivingDeposit:
 				tail := ev[0]
 				logger.Infof("(event) receiving deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-listener.ReceivedDeposit:
+			case ev := <-lis.ReceivedDeposit:
 				tail := ev[0]
 				logger.Infof("(event) received deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
 				printBalance(acc)
-			case ev := <-listener.ReceivedMessage:
+			case ev := <-lis.ReceivedMessage:
 				tail := ev[0]
 				logger.Infof("(event) received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case errorEvent := <-em.InternalAccountErrors():
-				logger.Errorf("received internal error: %s\n", errorEvent.Error)
-			case <-listener.Shutdown:
+			case err := <-lis.InternalError:
+				logger.Errorf("received internal error: %s\n", err.Error())
+			case <-lis.Shutdown:
 				logger.Info("account got gracefully shutdown")
 				break exit
 			}

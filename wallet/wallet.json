@@ -1,5 +1,5 @@
 {
-  "seed": "XUOAAY9ZWZHKFRDSLTPUGAHWSTZWAEOYJQDNXIRDLOSESMRQLDOFAUUTEEHQQAMBCLZHZQZOCLGJCOHXX",
+  "seed": "XUOAAY9ZWZHKFRDSLTPUGAHWSTZWAEOYJQDNXIRDLOSESMRQLDOFAUUXEFHQQRKBCLZHZQZOCLGACOHXX",
   "data_dir": "./data",
   "mwm": 14,
   "gtta_depth": 3,
@@ -8,16 +8,16 @@
   "promote_reattach_interval": 30,
   "address_validity_timeout_days": 3,
   "quorum": {
-    "primary_node": "https://trinity.iota-tangle.io:14265",
+    "primary_node": "https://node-x.iota-tangle.io:14268",
     "nodes": [
+      "http://server.arlayers.com:14265",
+      "http://iota.oyra.eu:14265",
       "https://trinity.iota-tangle.io:14265",
-      "https://pow1.iota.community:443",
-      "https://pool.trytes.eu",
-      "http://heimelaga.vodka:14265",
-      "http://173.249.45.12:14265"
+      "https://node-x.iota-tangle.io:14268",
+      "http://cvnode.codeworx.de:14265"
     ],
     "max_subtangle_milestone_delta": 1,
-    "timeout": 60,
+    "timeout": 15,
     "threshold": 0.66,
     "no_response_tolerance": 0.2
   },

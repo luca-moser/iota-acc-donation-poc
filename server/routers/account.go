@@ -1,9 +1,8 @@
 package routers
 
 import (
-	"fmt"
 	"github.com/gorilla/websocket"
-	"github.com/iotaledger/iota.go/account"
+	"github.com/iotaledger/iota.go/account/event/listener"
 	"github.com/labstack/echo"
 	"github.com/luca-moser/donapoc/server/controllers"
 	"net/http"
@@ -46,11 +45,6 @@ var (
 	upgrader = websocket.Upgrader{}
 )
 
-type errormsg struct {
-	Error string            `json:"error"`
-	Type  account.ErrorType `json:"type"`
-}
-
 type balancemsg struct {
 	Usable uint64 `json:"usable"`
 	Total  uint64 `json:"total"`
@@ -63,7 +57,7 @@ func (accRouter *AccRouter) Init() {
 	g := accRouter.WebEngine.Group("/account")
 
 	// register an event listener for all account events
-	listener := account.NewEventListener(accRouter.AccCtrl.EM).All()
+	lis := listener.NewEventListener(eventMachine).All()
 
 	// hold on to connected websocket clients
 	wsMu := sync.Mutex{}
@@ -87,29 +81,27 @@ func (accRouter *AccRouter) Init() {
 		for {
 			var msg *wsmsg
 			select {
-			case ev := <-listener.Promotion:
+			case ev := <-lis.Promotion:
 				msg = &wsmsg{MsgType: MsgPromotion, Data: ev}
-			case ev := <-listener.Reattachment:
+			case ev := <-lis.Reattachment:
 				msg = &wsmsg{MsgType: MsgReattachment, Data: ev}
-			case ev := <-listener.Sending:
+			case ev := <-lis.Sending:
 				msg = &wsmsg{MsgType: MsgSending, Data: ev}
-			case ev := <-listener.Sent:
+			case ev := <-lis.Sent:
 				msg = &wsmsg{MsgType: MsgSent, Data: ev}
-			case ev := <-listener.ReceivingDeposit:
+			case ev := <-lis.ReceivingDeposit:
 				msg = &wsmsg{MsgType: MsgReceivingDeposit, Data: ev}
-			case ev := <-listener.ReceivedDeposit:
-				usable, err := acc.UsableBalance()
+			case ev := <-lis.ReceivedDeposit:
+				usable, err := acc.AvailableBalance()
 				total, err2 := acc.TotalBalance()
 				if err == nil && err2 == nil {
 					sendWsMsg(&wsmsg{MsgType: MsgBalance, Data: balancemsg{usable, total}})
 				}
 				msg = &wsmsg{MsgType: MsgReceivedDeposit, Data: ev}
-			case ev := <-listener.ReceivedMessage:
+			case ev := <-lis.ReceivedMessage:
 				msg = &wsmsg{MsgType: MsgReceivedMessage, Data: ev}
-			case errorEvent := <-eventMachine.InternalAccountErrors():
-				fmt.Println(errorEvent.Error)
-				fmt.Println(errorEvent.Type)
-				msg = &wsmsg{MsgType: MsgError, Data: errormsg{errorEvent.Error.Error(), errorEvent.Type}}
+			case err := <-lis.InternalError:
+				msg = &wsmsg{MsgType: MsgError, Data: err.Error()}
 			}
 
 			sendWsMsg(msg)
@@ -126,7 +118,7 @@ func (accRouter *AccRouter) Init() {
 	})
 
 	g.GET("/balance", func(c echo.Context) error {
-		usable, err := acc.UsableBalance()
+		usable, err := acc.AvailableBalance()
 		if err != nil {
 			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err.Error()})
 			return err

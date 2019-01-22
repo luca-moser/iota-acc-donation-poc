@@ -6,6 +6,8 @@ import (
 	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
+	"github.com/iotaledger/iota.go/account/event"
+	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
@@ -24,7 +26,7 @@ const currentCondsFile = "./current"
 
 type AccCtrl struct {
 	Acc         account.Account
-	EM          account.EventMachine
+	EM          event.EventMachine
 	iota        *api.API
 	store       *store.BadgerStore
 	Config      *config.Configuration `inject:""`
@@ -99,14 +101,23 @@ func (ac *AccCtrl) Init() error {
 	ntpClock := &ntpclock{conf.Time.NTPServer}
 
 	// init account
-	eventMachine := account.NewEventMachine()
-	acc, err := account.NewBuilder(ac.iota, badger).Seed(conf.Seed).
+	em := event.NewEventMachine()
+
+	// create a poller which will check for incoming transfers
+	receiveEventFilter := poller.NewPerTailReceiveEventFilter(true)
+	transferPoller := poller.NewTransferPoller(
+		a, badger, em, account.NewInMemorySeedProvider(conf.Seed), receiveEventFilter,
+		time.Duration(conf.TransferPollInterval)*time.Second,
+	)
+
+	// init account
+	acc, err := account.New(a, badger).
+		Seed(conf.Seed).Clock(ntpClock).
 		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
-		MWM(conf.MWM).Depth(conf.GTTADepth).Clock(ntpClock).
-		PromoteReattachInterval(conf.PromoteReattachInterval).
-		TransferPollInterval(conf.TransferPollInterval).
-		ReceiveEventFilter(account.NewPerTailReceiveEventFilter(true)).
-		WithEvents(eventMachine).Build()
+		MWM(conf.MWM).Depth(conf.GTTADepth).
+		With(transferPoller).
+		WithEvents(em).
+		Build()
 	if err != nil {
 		return errors.Wrap(err, "unable to instantiate account")
 	}
@@ -114,14 +125,14 @@ func (ac *AccCtrl) Init() error {
 		return err
 	}
 	ac.Acc = acc
-	ac.EM = eventMachine
+	ac.EM = em
 	return nil
 }
 
 func (ac *AccCtrl) refreshConditions() error {
 	ac.logger.Info("generating new deposit condition as current one expires in 24h")
-	timeoutOn := time.Now().AddDate(0, 0, int(ac.Config.App.Account.AddressValidityTimeoutDays))
-	newDepCond, err := ac.Acc.NewDepositRequest(&deposit.Request{TimeoutOn: &timeoutOn, MultiUse: true})
+	timeoutAt := time.Now().AddDate(0, 0, int(ac.Config.App.Account.AddressValidityTimeoutDays))
+	newDepCond, err := ac.Acc.AllocateDepositRequest(&deposit.Request{TimeoutAt: &timeoutAt, MultiUse: true})
 	if err != nil {
 		return err
 	}
@@ -142,7 +153,7 @@ func (ac *AccCtrl) GenerateNewDonationAddress() (*deposit.Conditions, error) {
 	ac.checkCondMu.Lock()
 	defer ac.checkCondMu.Unlock()
 	// if the current deposit address will be expired within 24 hours, we generate a new one
-	if ac.current == nil || ac.current.TimeoutOn.Before(time.Now().AddDate(0, 0, 1)) {
+	if ac.current == nil || ac.current.TimeoutAt.Before(time.Now().AddDate(0, 0, 1)) {
 		if err := ac.refreshConditions(); err != nil {
 			return nil, err
 		}
