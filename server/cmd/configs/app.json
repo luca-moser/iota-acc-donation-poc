@@ -3,7 +3,7 @@
   "dev": true,
   "verbose": true,
   "account": {
-    "seed": "SWOHLUOUTE9ULXPDFZRBHYVYFXTXKLHXYPNOIKXIIJFJYUMRHKTZGOEXCRFNBAINKHSMHE9WVVRAFC9DT",
+    "seed": "SWOHLUOUTE9ULXPDFZRBHYFYFXTXKLHXYPNOIKXIIJFJHUMRHKTZGOEXCRFNBAINKHSMHE9WVVRAFC9DT",
     "data_dir": "./data",
     "mwm": 14,
     "gtta_depth": 3,
@@ -14,8 +14,6 @@
     "quorum": {
       "primary_node": "https://node-x.iota-tangle.io:14268",
       "nodes": [
-        "http://server.arlayers.com:14265",
-        "http://iota.oyra.eu:14265",
         "https://trinity.iota-tangle.io:14265",
         "https://node-x.iota-tangle.io:14268",
         "http://cvnode.codeworx.de:14265"

@@ -9,7 +9,7 @@ import (
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/event"
-	"github.com/iotaledger/iota.go/account/event/listener"
+	"github.com/iotaledger/iota.go/account/oracle"
 	"github.com/iotaledger/iota.go/account/plugins/promoter"
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
@@ -135,7 +135,7 @@ func main() {
 	)
 
 	// create a promoter/reattacher which takes care of trying to get
-	// pending transfers to confirm
+	// pending transfers to confirm.
 	promoterReattacher := promoter.NewPromoter(
 		iotaAPI, badger, em, ntpClock,
 		time.Duration(conf.PromoteReattachInterval)*time.Second,
@@ -146,28 +146,29 @@ func main() {
 		Seed(conf.Seed).Clock(ntpClock).
 		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
 		MWM(conf.MWM).Depth(conf.GTTADepth).
-		With(transferPoller, promoterReattacher).
+		With(transferPoller, promoterReattacher, NewLogPlugin(em)).
 		WithEvents(em).
 		Build()
 	must(err)
 	must(acc.Start())
 
-	// generate an own deposit address which expires in 3 days
-	// (just for having an address to send funds to for initial funding)
+	// test time source
 	timeQueryS := time.Now()
 	logger.Infof("querying time via NTP server %s", conf.Time.NTPServer)
 	now, err := ntpClock.Now()
 	must(err)
 	logger.Infof("took %v to query time from %s", time.Now().Sub(timeQueryS), conf.Time.NTPServer)
 
+	// generate an deposit address which expires in 2 hours
 	now = now.Add(time.Duration(2) * time.Hour)
 	logger.Infof("generating fresh deposit address with validity until %s....\n", now.Format(dateFormat))
 	depCond, err := acc.AllocateDepositRequest(&deposit.Request{TimeoutAt: &now})
 	must(err)
 	logger.Info("own address: ", depCond.Address)
 
-	// log all events happening around the account
-	logAccountEvents(em, acc)
+	// create an oracle which helps us to decide whether we should send a transaction.
+	// we only send a transaction if the timeout is more than 5 hours away.
+	sendOracle := oracle.New(oracle.NewTimeDecider(ntpClock, time.Duration(5)*time.Hour))
 
 	// listen for interrupt signals
 	interruptChan := make(chan os.Signal, 2)
@@ -216,25 +217,20 @@ exit:
 			continue
 		}
 
-		// get the current time from the NTP server
-		currentTime, err := ntpClock.Now()
-		must(err)
-
-		// check whether the magnet link expired
-		if currentTime.After(*conds.TimeoutAt) {
-			logger.Errorf("the magnet-link is expired on %s, (it's currently %s)\n", conds.TimeoutAt.Format(dateFormat), currentTime.Format(dateFormat))
+		ok, info, err := sendOracle.OkToSend(conds)
+		if err != nil {
+			logger.Error("send oracle returned an error:", err.Error())
 			continue
 		}
-
-		// check whether we are still in time for doing this transfer
-		if currentTime.Add(time.Duration(24) * time.Hour).After(*conds.TimeoutAt) {
-			logger.Error("the magnet link expires in less than 24 hours, please request a new one")
+		if !ok {
+			logger.Error("won't send transaction:", info)
 			continue
 		}
 
 		// send the transfer
 		logger.Info("sending", 10, "iotas to", conds.Address)
-		recipient := account.Recipient{Address: conds.Address, Value: 10}
+		recipient := conds.AsTransfer()
+		recipient.Value = 10
 		_, err = acc.Send(recipient)
 		switch errors.Cause(err) {
 		case consts.ErrInsufficientBalance:
@@ -270,43 +266,4 @@ func printBalance(acc account.Account) {
 		return
 	}
 	logger.Infof("current balance %d iotas (took %v)", balance, time.Now().Sub(s))
-}
-
-func logAccountEvents(em event.EventMachine, acc account.Account) {
-	// create a new listener which listens on the given account events
-	lis := listener.NewEventListener(em).All()
-
-	go func() {
-		defer lis.Close()
-	exit:
-		for {
-			select {
-			case ev := <-lis.Promotion:
-				logger.Infof("(event) promoted %s with %s\n", ev.BundleHash[:10], ev.PromotionTailTxHash)
-			case ev := <-lis.Reattachment:
-				logger.Infof("(event) reattached %s with %s\n", ev.BundleHash[:10], ev.ReattachmentTailTxHash)
-			case ev := <-lis.Sending:
-				tail := ev[0]
-				logger.Infof("(event) sending %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-lis.Sent:
-				tail := ev[0]
-				logger.Infof("(event) send (confirmed) %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-lis.ReceivingDeposit:
-				tail := ev[0]
-				logger.Infof("(event) receiving deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case ev := <-lis.ReceivedDeposit:
-				tail := ev[0]
-				logger.Infof("(event) received deposit %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-				printBalance(acc)
-			case ev := <-lis.ReceivedMessage:
-				tail := ev[0]
-				logger.Infof("(event) received msg %s with tail %s\n", tail.Bundle[:10], tail.Hash)
-			case err := <-lis.InternalError:
-				logger.Errorf("received internal error: %s\n", err.Error())
-			case <-lis.Shutdown:
-				logger.Info("account got gracefully shutdown")
-				break exit
-			}
-		}
-	}()
 }
