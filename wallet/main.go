@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Mandala/go-log"
-	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/event"
 	"github.com/iotaledger/iota.go/account/oracle"
+	oracle_time "github.com/iotaledger/iota.go/account/oracle/time"
 	"github.com/iotaledger/iota.go/account/plugins/promoter"
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
+	badger_store "github.com/iotaledger/iota.go/account/store/badger"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
+	"github.com/luca-moser/donapoc/quorum"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
@@ -34,11 +36,14 @@ type NTPClock struct {
 }
 
 func (clock *NTPClock) Now() (time.Time, error) {
+	return time.Now(), nil
+	/*
 	t, err := ntp.Time(clock.server)
 	if err != nil {
 		return time.Time{}, errors.Wrap(err, "NTP clock error")
 	}
 	return t.UTC(), nil
+	*/
 }
 
 type config struct {
@@ -72,13 +77,9 @@ func readConfig() *config {
 	return config
 }
 
-func handleShutdown() {
-
-}
-
 func main() {
 	var acc account.Account
-	var badger *store.BadgerStore
+	var badger *badger_store.BadgerStore
 
 	// shutdown function called on interrupts or panics
 	defer func() {
@@ -104,21 +105,21 @@ func main() {
 	// compose quorum API
 	quorumConf := conf.Quorum
 	httpClient := &http.Client{Timeout: time.Duration(quorumConf.Timeout) * time.Second}
-	iotaAPI, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
+	iotaAPI, err := api.ComposeAPI(quorum.QuorumHTTPClientSettings{
 		PrimaryNode:                &quorumConf.PrimaryNode,
 		Threshold:                  quorumConf.Threshold,
 		NoResponseTolerance:        quorumConf.NoResponseTolerance,
 		Client:                     httpClient,
 		Nodes:                      quorumConf.Nodes,
 		MaxSubtangleMilestoneDelta: quorumConf.MaxSubtangleMilestoneDelta,
-	}, api.NewQuorumHTTPClient)
+	}, quorum.NewQuorumHTTPClient)
 	must(err)
 
 	// make sure data dir exists
 	os.MkdirAll(conf.DataDir, os.ModePerm)
 
 	// init store for the account
-	badger, err = store.NewBadgerStore(conf.DataDir)
+	badger, err = badger_store.NewBadgerStore(conf.DataDir)
 	must(err)
 
 	// init NTP time source
@@ -168,7 +169,7 @@ func main() {
 
 	// create an oracle which helps us to decide whether we should send a transaction.
 	// we only send a transaction if the timeout is more than 5 hours away.
-	sendOracle := oracle.New(oracle.NewTimeDecider(ntpClock, time.Duration(5)*time.Hour))
+	sendOracle := oracle.New(oracle_time.NewTimeDecider(ntpClock, time.Duration(5)*time.Hour))
 
 	// listen for interrupt signals
 	interruptChan := make(chan os.Signal, 2)

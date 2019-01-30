@@ -8,9 +8,10 @@ import (
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/event"
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
-	"github.com/iotaledger/iota.go/account/store"
+	badger_store "github.com/iotaledger/iota.go/account/store/badger"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
+	"github.com/luca-moser/donapoc/quorum"
 	"github.com/luca-moser/donapoc/server/server/config"
 	"github.com/luca-moser/donapoc/server/utilities"
 	"github.com/pkg/errors"
@@ -28,7 +29,7 @@ type AccCtrl struct {
 	Acc         account.Account
 	EM          event.EventMachine
 	iota        *api.API
-	store       *store.BadgerStore
+	store       *badger_store.BadgerStore
 	Config      *config.Configuration `inject:""`
 	current     *deposit.Conditions
 	checkCondMu sync.Mutex
@@ -75,14 +76,14 @@ func (ac *AccCtrl) Init() error {
 	// init quorumed (what a word) api
 	quorumConf := conf.Quorum
 	httpClient := &http.Client{Timeout: time.Duration(quorumConf.Timeout) * time.Second}
-	a, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
+	a, err := api.ComposeAPI(quorum.QuorumHTTPClientSettings{
 		PrimaryNode:                &quorumConf.PrimaryNode,
 		Threshold:                  quorumConf.Threshold,
 		NoResponseTolerance:        quorumConf.NoResponseTolerance,
 		Client:                     httpClient,
 		Nodes:                      quorumConf.Nodes,
 		MaxSubtangleMilestoneDelta: quorumConf.MaxSubtangleMilestoneDelta,
-	}, api.NewQuorumHTTPClient)
+	}, quorum.NewQuorumHTTPClient)
 	if err != nil {
 		return errors.Wrap(err, "unable to construct IOTA API")
 	}
@@ -92,7 +93,7 @@ func (ac *AccCtrl) Init() error {
 	os.MkdirAll(conf.DataDir, os.ModePerm)
 
 	// init store for the account
-	badger, err := store.NewBadgerStore(conf.DataDir)
+	badger, err := badger_store.NewBadgerStore(conf.DataDir)
 	if err != nil {
 		return errors.Wrap(err, "unable to initialize badger store")
 	}
