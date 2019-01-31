@@ -3,12 +3,13 @@ package controllers
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/beevik/ntp"
 	"github.com/iotaledger/iota.go/account"
+	"github.com/iotaledger/iota.go/account/builder"
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/event"
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	badger_store "github.com/iotaledger/iota.go/account/store/badger"
+	"github.com/iotaledger/iota.go/account/timesrc"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
 	"github.com/luca-moser/donapoc/quorum"
@@ -34,18 +35,6 @@ type AccCtrl struct {
 	current     *deposit.Conditions
 	checkCondMu sync.Mutex
 	logger      log15.Logger
-}
-
-type ntpclock struct {
-	server string
-}
-
-func (clock *ntpclock) Now() (time.Time, error) {
-	t, err := ntp.Time(clock.server)
-	if err != nil {
-		return time.Time{}, errors.Wrap(err, "NTP clock error")
-	}
-	return t.UTC(), nil
 }
 
 func (ac *AccCtrl) Init() error {
@@ -99,7 +88,7 @@ func (ac *AccCtrl) Init() error {
 	}
 
 	// init NTP time source
-	ntpClock := &ntpclock{conf.Time.NTPServer}
+	ntpClock := timesrc.NewNTPTimeSource(conf.Time.NTPServer)
 
 	// init account
 	em := event.NewEventMachine()
@@ -112,11 +101,15 @@ func (ac *AccCtrl) Init() error {
 	)
 
 	// init account
-	acc, err := account.New(a, badger).
-		Seed(conf.Seed).Clock(ntpClock).
-		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
-		MWM(conf.MWM).Depth(conf.GTTADepth).
-		With(transferPoller).
+	acc, err := builder.NewBuilder().
+		WithAPI(a).
+		WithStore(badger).
+		WithSeed(conf.Seed).
+		WithTimeSource(ntpClock).
+		WithSecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
+		WithMWM(conf.MWM).
+		WithDepth(conf.GTTADepth).
+		WithPlugins(transferPoller).
 		WithEvents(em).
 		Build()
 	if err != nil {

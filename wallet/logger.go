@@ -16,6 +16,10 @@ type logplugin struct {
 	exit chan struct{}
 }
 
+func (l *logplugin) Name() string {
+	return "logger"
+}
+
 func (l *logplugin) Start(acc account.Account) error {
 	l.acc = acc
 	l.log()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/Mandala/go-log"
 	"github.com/iotaledger/iota.go/account"
+	"github.com/iotaledger/iota.go/account/builder"
 	"github.com/iotaledger/iota.go/account/deposit"
 	"github.com/iotaledger/iota.go/account/event"
 	"github.com/iotaledger/iota.go/account/oracle"
@@ -14,6 +15,7 @@ import (
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
 	badger_store "github.com/iotaledger/iota.go/account/store/badger"
+	"github.com/iotaledger/iota.go/account/timesrc"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
 	"github.com/luca-moser/donapoc/quorum"
@@ -30,52 +32,6 @@ const configFile = "wallet.json"
 const dateFormat = "2006-02-01 15:04:05"
 
 var logger *log.Logger
-
-type NTPClock struct {
-	server string
-}
-
-func (clock *NTPClock) Now() (time.Time, error) {
-	return time.Now(), nil
-	/*
-	t, err := ntp.Time(clock.server)
-	if err != nil {
-		return time.Time{}, errors.Wrap(err, "NTP clock error")
-	}
-	return t.UTC(), nil
-	*/
-}
-
-type config struct {
-	Seed    string `json:"seed"`
-	DataDir string `json:"data_dir"`
-	Quorum  struct {
-		PrimaryNode                string   `json:"primary_node"`
-		Nodes                      []string `json:"nodes"`
-		Threshold                  float64  `json:"threshold"`
-		NoResponseTolerance        float64  `json:"no_response_tolerance"`
-		MaxSubtangleMilestoneDelta uint64   `json:"max_subtangle_milestone_delta"`
-		Timeout                    uint64   `json:"timeout"`
-	} `json:"quorum"`
-	MWM                        uint64 `json:"mwm"`
-	GTTADepth                  uint64 `json:"gtta_depth"`
-	SecurityLevel              uint64 `json:"security_level"`
-	TransferPollInterval       uint64 `json:"transfer_poll_interval"`
-	PromoteReattachInterval    uint64 `json:"promote_reattach_interval"`
-	AddressValidityTimeoutDays uint64 `json:"address_validity_timeout_days"`
-	Time                       struct {
-		NTPServer string `json:"ntp_server"`
-	} `json:"time"`
-}
-
-func readConfig() *config {
-	configBytes, err := ioutil.ReadFile(configFile)
-	must(err)
-
-	config := &config{}
-	must(json.Unmarshal(configBytes, config))
-	return config
-}
 
 func main() {
 	var acc account.Account
@@ -123,7 +79,7 @@ func main() {
 	must(err)
 
 	// init NTP time source
-	ntpClock := &NTPClock{conf.Time.NTPServer}
+	ntpClock := timesrc.NewNTPTimeSource(conf.Time.NTPServer)
 
 	// init account
 	em := event.NewEventMachine()
@@ -143,11 +99,15 @@ func main() {
 		conf.GTTADepth, conf.MWM)
 
 	// build the account object
-	acc, err = account.New(iotaAPI, badger).
-		Seed(conf.Seed).Clock(ntpClock).
-		SecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
-		MWM(conf.MWM).Depth(conf.GTTADepth).
-		With(transferPoller, promoterReattacher, NewLogPlugin(em)).
+	acc, err = builder.NewBuilder().
+		WithAPI(iotaAPI).
+		WithStore(badger).
+		WithSeed(conf.Seed).
+		WithTimeSource(ntpClock).
+		WithSecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
+		WithMWM(conf.MWM).
+		WithDepth(conf.GTTADepth).
+		WithPlugins(transferPoller, promoterReattacher, NewLogPlugin(em)).
 		WithEvents(em).
 		Build()
 	must(err)
@@ -156,7 +116,7 @@ func main() {
 	// test time source
 	timeQueryS := time.Now()
 	logger.Infof("querying time via NTP server %s", conf.Time.NTPServer)
-	now, err := ntpClock.Now()
+	now, err := ntpClock.Time()
 	must(err)
 	logger.Infof("took %v to query time from %s", time.Now().Sub(timeQueryS), conf.Time.NTPServer)
 
@@ -267,4 +227,35 @@ func printBalance(acc account.Account) {
 		return
 	}
 	logger.Infof("current balance %d iotas (took %v)", balance, time.Now().Sub(s))
+}
+
+type config struct {
+	Seed    string `json:"seed"`
+	DataDir string `json:"data_dir"`
+	Quorum  struct {
+		PrimaryNode                string   `json:"primary_node"`
+		Nodes                      []string `json:"nodes"`
+		Threshold                  float64  `json:"threshold"`
+		NoResponseTolerance        float64  `json:"no_response_tolerance"`
+		MaxSubtangleMilestoneDelta uint64   `json:"max_subtangle_milestone_delta"`
+		Timeout                    uint64   `json:"timeout"`
+	} `json:"quorum"`
+	MWM                        uint64 `json:"mwm"`
+	GTTADepth                  uint64 `json:"gtta_depth"`
+	SecurityLevel              uint64 `json:"security_level"`
+	TransferPollInterval       uint64 `json:"transfer_poll_interval"`
+	PromoteReattachInterval    uint64 `json:"promote_reattach_interval"`
+	AddressValidityTimeoutDays uint64 `json:"address_validity_timeout_days"`
+	Time                       struct {
+		NTPServer string `json:"ntp_server"`
+	} `json:"time"`
+}
+
+func readConfig() *config {
+	configBytes, err := ioutil.ReadFile(configFile)
+	must(err)
+
+	config := &config{}
+	must(json.Unmarshal(configBytes, config))
+	return config
 }
