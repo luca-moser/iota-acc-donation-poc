@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/Mandala/go-log"
@@ -14,11 +13,10 @@ import (
 	"github.com/iotaledger/iota.go/account/plugins/promoter"
 	"github.com/iotaledger/iota.go/account/plugins/transfer/poller"
 	"github.com/iotaledger/iota.go/account/store"
-	badger_store "github.com/iotaledger/iota.go/account/store/badger"
+	mongo_store "github.com/iotaledger/iota.go/account/store/mongo"
 	"github.com/iotaledger/iota.go/account/timesrc"
 	"github.com/iotaledger/iota.go/api"
 	"github.com/iotaledger/iota.go/consts"
-	"github.com/luca-moser/donapoc/quorum"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
@@ -35,7 +33,7 @@ var logger *log.Logger
 
 func main() {
 	var acc account.Account
-	var badger *badger_store.BadgerStore
+	var dataStore *mongo_store.MongoStore
 
 	// shutdown function called on interrupts or panics
 	defer func() {
@@ -47,11 +45,6 @@ func main() {
 				logger.Fatal("couldn't shutdown account gracefully")
 			}
 		}
-		if badger != nil {
-			if err := badger.Close(); err != nil {
-				logger.Fatal("couldn't close store gracefully")
-			}
-		}
 		logger.Info("bye!")
 	}()
 
@@ -61,21 +54,21 @@ func main() {
 	// compose quorum API
 	quorumConf := conf.Quorum
 	httpClient := &http.Client{Timeout: time.Duration(quorumConf.Timeout) * time.Second}
-	iotaAPI, err := api.ComposeAPI(quorum.QuorumHTTPClientSettings{
+	iotaAPI, err := api.ComposeAPI(api.QuorumHTTPClientSettings{
 		PrimaryNode:                &quorumConf.PrimaryNode,
 		Threshold:                  quorumConf.Threshold,
 		NoResponseTolerance:        quorumConf.NoResponseTolerance,
 		Client:                     httpClient,
 		Nodes:                      quorumConf.Nodes,
 		MaxSubtangleMilestoneDelta: quorumConf.MaxSubtangleMilestoneDelta,
-	}, quorum.NewQuorumHTTPClient)
+	}, api.NewQuorumHTTPClient)
 	must(err)
 
-	// make sure data dir exists
-	os.MkdirAll(conf.DataDir, os.ModePerm)
-
 	// init store for the account
-	badger, err = badger_store.NewBadgerStore(conf.DataDir)
+	mongoConf := conf.MongoDB
+	dataStore, err = mongo_store.NewMongoStore(mongoConf.URI, &mongo_store.Config{
+		DBName: mongoConf.DBName, CollName: mongoConf.CollName,
+	})
 	must(err)
 
 	// init NTP time source
@@ -84,32 +77,29 @@ func main() {
 	// init account
 	em := event.NewEventMachine()
 
-	// create a poller which will check for incoming transfers
-	receiveEventFilter := poller.NewPerTailReceiveEventFilter(true)
-	transferPoller := poller.NewTransferPoller(
-		iotaAPI, badger, em, account.NewInMemorySeedProvider(conf.Seed), receiveEventFilter,
-		time.Duration(conf.TransferPollInterval)*time.Second,
-	)
-
-	// create a promoter/reattacher which takes care of trying to get
-	// pending transfers to confirm.
-	promoterReattacher := promoter.NewPromoter(
-		iotaAPI, badger, em, ntpClock,
-		time.Duration(conf.PromoteReattachInterval)*time.Second,
-		conf.GTTADepth, conf.MWM)
-
 	// build the account object
-	acc, err = builder.NewBuilder().
+	b := builder.NewBuilder().
 		WithAPI(iotaAPI).
-		WithStore(badger).
+		WithStore(dataStore).
 		WithSeed(conf.Seed).
 		WithTimeSource(ntpClock).
 		WithSecurityLevel(consts.SecurityLevel(conf.SecurityLevel)).
 		WithMWM(conf.MWM).
 		WithDepth(conf.GTTADepth).
-		WithPlugins(transferPoller, promoterReattacher, NewLogPlugin(em)).
-		WithEvents(em).
-		Build()
+		WithEvents(em)
+
+	// create a poller which will check for incoming transfers
+	transferPoller := poller.NewTransferPoller(
+		b.Settings(),
+		poller.NewPerTailReceiveEventFilter(true),
+		time.Duration(conf.TransferPollInterval)*time.Second,
+	)
+
+	// create a promoter/reattacher which takes care of trying to get
+	// pending transfers to confirm.
+	promoterReattacher := promoter.NewPromoter(b.Settings(), time.Duration(conf.PromoteReattachInterval)*time.Second)
+
+	acc, err = b.Build(transferPoller, promoterReattacher, NewLogPlugin(em))
 	must(err)
 	must(acc.Start())
 
@@ -120,7 +110,7 @@ func main() {
 	must(err)
 	logger.Infof("took %v to query time from %s", time.Now().Sub(timeQueryS), conf.Time.NTPServer)
 
-	// generate an deposit address which expires in 2 hours
+	// generate a deposit address which expires in 2 hours
 	now = now.Add(time.Duration(2) * time.Hour)
 	logger.Infof("generating fresh deposit address with validity until %s....\n", now.Format(dateFormat))
 	depCond, err := acc.AllocateDepositRequest(&deposit.Request{TimeoutAt: &now})
@@ -163,7 +153,7 @@ exit:
 		}
 
 		if command == "state" {
-			printState(badger, conf.Seed)
+			printState(dataStore, acc.ID())
 			continue
 		}
 
@@ -210,8 +200,8 @@ func must(err error) {
 	}
 }
 
-func printState(store store.Store, seed string) {
-	state, err := store.LoadAccount(fmt.Sprintf("%x", sha256.Sum256([]byte(seed))))
+func printState(store store.Store, id string) {
+	state, err := store.LoadAccount(id)
 	stateJson, err := json.MarshalIndent(state, "", "   ")
 	must(err)
 	fmt.Print(string(stateJson))
@@ -230,9 +220,8 @@ func printBalance(acc account.Account) {
 }
 
 type config struct {
-	Seed    string `json:"seed"`
-	DataDir string `json:"data_dir"`
-	Quorum  struct {
+	Seed   string `json:"seed"`
+	Quorum struct {
 		PrimaryNode                string   `json:"primary_node"`
 		Nodes                      []string `json:"nodes"`
 		Threshold                  float64  `json:"threshold"`
@@ -249,6 +238,11 @@ type config struct {
 	Time                       struct {
 		NTPServer string `json:"ntp_server"`
 	} `json:"time"`
+	MongoDB struct {
+		URI      string `json:"uri"`
+		DBName   string `json:"dbname"`
+		CollName string `json:"collname"`
+	} `json:"mongodb"`
 }
 
 func readConfig() *config {

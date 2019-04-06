@@ -3,8 +3,7 @@
   "dev": true,
   "verbose": true,
   "account": {
-    "seed": "SWOHLUOUTE9ULXPDFZRBHYFYFXTXKLHXYPNOIKXIUJFJHUMRHKTZGOEXCRFNBAINKHSMHE9WVVRAFC9DT",
-    "data_dir": "./data",
+    "seed": "SWOHLAOUTE9ULXPDFZRBHYFYFXTXKLHXYPNOIKXIOJFJXUMRHKTZGOEXCRFNBARNKHSMHE9WVVRAFC9KT",
     "mwm": 14,
     "gtta_depth": 3,
     "security_level": 2,
@@ -12,19 +11,23 @@
     "promote_reattach_interval": 30,
     "address_validity_timeout_days": 3,
     "quorum": {
-      "primary_node": "https://node-x.iota-tangle.io:14268",
+      "primary_node": "https://trinity.iota-tangle.io:14265",
       "nodes": [
         "https://trinity.iota-tangle.io:14265",
-        "https://node-x.iota-tangle.io:14268",
-        "http://cvnode.codeworx.de:14265"
+        "https://node-x.iota-tangle.io:14268"
       ],
-      "max_subtangle_milestone_delta": 1,
+      "max_subtangle_milestone_delta": 2,
       "timeout": 15,
       "threshold": 0.66,
       "no_response_tolerance": 0.2
     },
     "time": {
       "ntp_server": "time.google.com"
+    },
+    "mongodb": {
+      "uri": "mongodb://localhost:27017",
+      "dbname": "donapoc_server",
+      "collname": "accounts"
     }
   },
   "http": {

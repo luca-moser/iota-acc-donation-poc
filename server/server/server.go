@@ -9,7 +9,6 @@ import (
 	"github.com/luca-moser/donapoc/server/routers"
 	"github.com/luca-moser/donapoc/server/server/config"
 	"github.com/luca-moser/donapoc/server/utilities"
-	"gopkg.in/mgo.v2"
 	"html/template"
 	"io"
 	"os"
@@ -27,7 +26,6 @@ func (t *TemplateRendered) Render(w io.Writer, name string, data interface{}, c 
 type Server struct {
 	Config    *config.Configuration
 	WebEngine *echo.Echo
-	Mongo     *mgo.Session
 }
 
 func (server *Server) Start() {

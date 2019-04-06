@@ -54,7 +54,6 @@ type AppConfig struct {
 
 type AccountConfig struct {
 	Seed    string `json:"seed"`
-	DataDir string `json:"data_dir"`
 	Quorum  struct {
 		PrimaryNode                string   `json:"primary_node"`
 		Nodes                      []string `json:"nodes"`
@@ -69,6 +68,11 @@ type AccountConfig struct {
 	TransferPollInterval       uint64 `json:"transfer_poll_interval"`
 	PromoteReattachInterval    uint64 `json:"promote_reattach_interval"`
 	AddressValidityTimeoutDays uint64 `json:"address_validity_timeout_days"`
+	MongoDB struct {
+		URI      string `json:"uri"`
+		DBName   string `json:"dbname"`
+		CollName string `json:"collname"`
+	} `json:"mongodb"`
 	Time                       struct {
 		NTPServer string `json:"ntp_server"`
 	} `json:"time"`

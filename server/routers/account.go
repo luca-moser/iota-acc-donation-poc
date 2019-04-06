@@ -57,7 +57,15 @@ func (accRouter *AccRouter) Init() {
 	g := accRouter.WebEngine.Group("/account")
 
 	// register an event listener for all account events
-	lis := listener.NewEventListener(eventMachine).All()
+	lis := listener.NewChannelEventListener(eventMachine).
+		RegPromotions().
+		RegReattachments().
+		RegSentTransfers().
+		RegConfirmedTransfers().
+		RegReceivingDeposits().
+		RegReceivedDeposits().
+		RegReceivedMessages().
+		RegInternalErrors()
 
 	// hold on to connected websocket clients
 	wsMu := sync.Mutex{}
@@ -81,13 +89,13 @@ func (accRouter *AccRouter) Init() {
 		for {
 			var msg *wsmsg
 			select {
-			case ev := <-lis.Promotion:
+			case ev := <-lis.Promoted:
 				msg = &wsmsg{MsgType: MsgPromotion, Data: ev}
-			case ev := <-lis.Reattachment:
+			case ev := <-lis.Reattached:
 				msg = &wsmsg{MsgType: MsgReattachment, Data: ev}
-			case ev := <-lis.Sending:
+			case ev := <-lis.SentTransfer:
 				msg = &wsmsg{MsgType: MsgSending, Data: ev}
-			case ev := <-lis.Sent:
+			case ev := <-lis.TransferConfirmed:
 				msg = &wsmsg{MsgType: MsgSent, Data: ev}
 			case ev := <-lis.ReceivingDeposit:
 				msg = &wsmsg{MsgType: MsgReceivingDeposit, Data: ev}

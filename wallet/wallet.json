@@ -1,23 +1,26 @@
 {
-  "seed": "XUOAAY9ZJZHKFRDSLTPUGAHWSTZWARUYJQDNXIRDLOSESMRQLDOFAUUXEFHQQRKBCLZHZQZOCLGACOHXX",
-  "data_dir": "./data",
+  "seed": "XUOAAY9ZJZHKORDSLTPUGAHWSTZWARUYJQDNXIRDLOSESMRQLDOFAUUXEFHQQRKBCLZHZQZOCLGACOHXX",
   "mwm": 14,
   "gtta_depth": 3,
   "security_level": 2,
-  "transfer_poll_interval": 5,
+  "transfer_poll_interval": 10,
   "promote_reattach_interval": 30,
   "address_validity_timeout_days": 3,
   "quorum": {
-    "primary_node": "https://node-x.iota-tangle.io:14268",
+    "primary_node": "https://trinity.iota-tangle.io:14265",
     "nodes": [
       "https://trinity.iota-tangle.io:14265",
-      "https://node-x.iota-tangle.io:14268",
-      "http://cvnode.codeworx.de:14265"
+      "https://node-x.iota-tangle.io:14268"
     ],
-    "max_subtangle_milestone_delta": 1,
-    "timeout": 15,
+    "max_subtangle_milestone_delta": 2,
+    "timeout": 10,
     "threshold": 0.66,
     "no_response_tolerance": 0.2
+  },
+  "mongodb": {
+    "uri": "mongodb://localhost:27017",
+    "dbname": "donapoc_wallet",
+    "collname": "accounts"
   },
   "time": {
     "ntp_server": "time.google.com"

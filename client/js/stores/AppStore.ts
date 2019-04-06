@@ -5,15 +5,15 @@ const donationURI = "/account/donation-link";
 const balanceURI = "/account/balance";
 
 class DepCond {
-    timeout_on: Date;
+    timeout_at: Date;
     multi_use: boolean = false;
     expected_amount: number = 0;
     address: string;
 
     url(): string {
-        let time = Math.round(new Date(this.timeout_on).getTime() / 1000);
+        let time = Math.round(new Date(this.timeout_at).getTime() / 1000);
         let am = this.expected_amount ? this.expected_amount : 0;
-        return `iota://${this.address}/?t=${time}&m=${this.multi_use}&am=${am}`;
+        return `iota://${this.address}/?timeout_at=${time}&multi_use=${this.multi_use}&expected_amount=${am}`;
     }
 }
 

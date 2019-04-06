@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/labstack/echo"
 	"github.com/pkg/errors"
-	"gopkg.in/mgo.v2"
+	"go.mongodb.org/mongo-driver/mongo"
 	"io/ioutil"
 	"net/http"
 )
@@ -66,7 +66,7 @@ func (indexRouter *IndexRouter) Init() {
 			message = "internal server error"
 
 			// 404 not found
-		case mgo.ErrNotFound:
+		case mongo.ErrNoDocuments:
 			statusCode = http.StatusNotFound
 			message = "not found"
 
