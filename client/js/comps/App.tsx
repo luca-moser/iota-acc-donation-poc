@@ -103,10 +103,10 @@ class DonationButton extends React.Component<Props, {}> {
     }
 
     render() {
-        let {depositCondition} = this.props.appStore;
+        let {cda} = this.props.appStore;
         let url;
-        if (depositCondition) {
-            url = depositCondition.url();
+        if (cda) {
+            url = cda.url();
         }
         return (
             <div>
@@ -118,7 +118,7 @@ class DonationButton extends React.Component<Props, {}> {
                                      alt={"iota.png"}/>
                 </button>
                 {
-                    depositCondition ?
+                    cda ?
                         <div className={css.donationInfo}>
                             <p>Thank You! Please open up the following magnet link:</p>
                             <a className={css.donationMagnetLink} href={url}>

@@ -4,7 +4,7 @@ import {default as axios} from 'axios';
 const donationURI = "/account/donation-link";
 const balanceURI = "/account/balance";
 
-class DepCond {
+class CDA {
     timeout_at: Date;
     multi_use: boolean = false;
     expected_amount: number = 0;
@@ -59,7 +59,7 @@ export class Event {
 
 export class ApplicationStore {
     @observable runningSince = 0;
-    @observable depositCondition: DepCond = null;
+    @observable cda: CDA = null;
     @observable usable_balance: number = 0;
     @observable total_balance: number = 0;
     @observable generating = false;
@@ -80,7 +80,7 @@ export class ApplicationStore {
         this.ws.onmessage = (e: MessageEvent) => {
             let obj: WsMsg = JSON.parse(e.data);
             let event;
-            let now = new Date()
+            let now = new Date();
             let tail, bundle, msg, value;
             switch (obj.msg_type) {
                 case MsgType.Error:
@@ -166,10 +166,10 @@ export class ApplicationStore {
                 this.generating = true;
             });
             let res = await axios.get(donationURI);
-            let depCond: DepCond = Object.assign(new DepCond(), res.data);
+            let cda: CDA = Object.assign(new CDA(), res.data);
             runInAction(() => {
                 this.generating = false;
-                this.depositCondition = depCond;
+                this.cda = cda;
             });
         } catch (err) {
             console.error(err);

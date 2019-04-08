@@ -13,7 +13,7 @@ require (
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/google/go-cmp v0.2.0 // indirect
 	github.com/gorilla/websocket v1.4.0
-	github.com/iotaledger/iota.go v1.0.0-beta.4
+	github.com/iotaledger/iota.go v1.0.0-beta.5
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/labstack/echo v3.3.5+incompatible
 	github.com/labstack/gommon v0.2.8 // indirect
@@ -31,6 +31,5 @@ require (
 	golang.org/x/sys v0.0.0-20190405154228-4b34438f7a67 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/inconshreveable/log15.v2 v2.0.0-20180818164646-67afb5ed74ec
-	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )

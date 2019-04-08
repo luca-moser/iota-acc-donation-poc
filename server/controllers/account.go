@@ -32,7 +32,7 @@ type AccCtrl struct {
 	iota        *api.API
 	store       *badger_store.BadgerStore
 	Config      *config.Configuration `inject:""`
-	current     *deposit.Conditions
+	current     *deposit.CDA
 	checkCondMu sync.Mutex
 	logger      log15.Logger
 }
@@ -42,7 +42,7 @@ func (ac *AccCtrl) Init() error {
 	ac.logger = logger
 
 	// register deposit condition gob
-	gob.Register(deposit.Conditions{})
+	gob.Register(deposit.CDA{})
 
 	// read in existing deposit condition
 	if _, err := os.Stat(currentCondsFile); err == nil {
@@ -52,7 +52,7 @@ func (ac *AccCtrl) Init() error {
 			return err
 		}
 		dec := gob.NewDecoder(bytes.NewReader(currentBytes))
-		currentCond := &deposit.Conditions{}
+		currentCond := &deposit.CDA{}
 		if err := dec.Decode(currentCond); err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (ac *AccCtrl) Init() error {
 func (ac *AccCtrl) refreshConditions() error {
 	ac.logger.Info("generating new deposit condition as current one expires in 24h")
 	timeoutAt := time.Now().AddDate(0, 0, int(ac.Config.App.Account.AddressValidityTimeoutDays))
-	newDepCond, err := ac.Acc.AllocateDepositRequest(&deposit.Request{TimeoutAt: &timeoutAt, MultiUse: true})
+	newDepCond, err := ac.Acc.AllocateDepositAddress(&deposit.Conditions{TimeoutAt: &timeoutAt, MultiUse: true})
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func (ac *AccCtrl) refreshConditions() error {
 }
 
 // GenerateNewDonationAddress returns the current valid deposit conditions or a new one
-func (ac *AccCtrl) GenerateNewDonationAddress() (*deposit.Conditions, error) {
+func (ac *AccCtrl) GenerateNewDonationAddress() (*deposit.CDA, error) {
 	ac.checkCondMu.Lock()
 	defer ac.checkCondMu.Unlock()
 	// if the current deposit address will expire within 24 hours, we generate a new one

@@ -117,12 +117,12 @@ func (accRouter *AccRouter) Init() {
 	}()
 
 	g.GET("/donation-link", func(c echo.Context) error {
-		conditions, err := accRouter.AccCtrl.GenerateNewDonationAddress()
+		cda, err := accRouter.AccCtrl.GenerateNewDonationAddress()
 		if err != nil {
 			sendWsMsg(&wsmsg{MsgType: MsgError, Data: err.Error()})
 			return err
 		}
-		return c.JSON(http.StatusOK, *conditions)
+		return c.JSON(http.StatusOK, *cda)
 	})
 
 	g.GET("/balance", func(c echo.Context) error {
